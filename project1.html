@@ -1,0 +1,142 @@
+# импортируем библиотеки
+import pandas as pd 
+import matplotlib.pyplot as plt
+import numpy as np
+
+# считываем таблицы
+events = pd.read_csv('7_4_Events (1).csv', sep=',')
+purchase = pd.read_csv('purchase (1).csv', sep=',')
+purchase['event_type']='purchase'
+
+# фильтруем таблицы так, чтобы в них хранились только данные о пользователях, зарегистрировавшихся в 2018 году.
+mask_2018 = (events.start_time >= '2018-01-01') & (events.start_time < '2019-01-01') & (events['event_type']=='registration')
+reg_users = events[mask_2018]['user_id'].to_list()
+purchase_2018 = purchase[purchase['user_id'].isin(reg_users)]
+events_2018 = events[events['user_id'].isin(reg_users)]
+
+# преобразуем даты в формат datetime
+purchase_2018['event_datetime'] = pd.to_datetime(purchase_2018['event_datetime'])
+events_2018['start_time'] = pd.to_datetime(events_2018['start_time'])
+
+# переименовываем id, чтобы не запутаться
+purchase_2018 = purchase_2018.rename({'id': 'purchase_id'})
+events_2018 = events_2018.rename({'id':'events_id'})
+purchase_2018 = purchase_2018.rename(columns={'event_datetime':'start_time'})
+
+# объединяем 2 таблицы в общую
+total_events_df = pd.concat([events_2018, purchase_2018], sort=False)
+total_events_df = total_events_df.reset_index(drop=True).sort_values('start_time')
+total_events_df['event_type'].unique()
+
+start_dates = pd.pivot_table(total_events_df, index='user_id', columns='event_type', values='start_time', aggfunc=np.min)
+start_dates['reg_purch_diff'] = start_dates['purchase'] - start_dates['registration']
+start_dates['reg_purch_diff'].describe()
+
+# создаем 2 выборки данных - для прошедших туториал и для пользователей, не прошедших его.
+tut_finish_users = total_events_df[total_events_df['event_type']=='tutorial_finish']['user_id'].unique().tolist()
+total_events_tut_finish_df = total_events_df[total_events_df['user_id'].isin(tut_finish_users)]
+total_events_tut_not_finish_df = total_events_df[~total_events_df['user_id'].isin(tut_finish_users)]
+
+# создаем сводную таблицу для прошедших туториал пользователей. 
+start_dates_tut_finished = pd.pivot_table(total_events_tut_finish_df, index='user_id', columns='event_type', values='start_time', aggfunc=np.min)
+start_dates_tut_finished['reg_purch_diff_f'] = start_dates_tut_finished['purchase'] - start_dates_tut_finished['registration']
+start_dates_tut_finished.head()
+
+#  то же самое - для тех, кто туториал не прошёл.
+start_dates_tut_not_finished = pd.pivot_table(total_events_tut_not_finish_df, index='user_id', columns='event_type', values='start_time', aggfunc=np.min)
+start_dates_tut_not_finished['reg_purch_diff_nf'] = start_dates_tut_not_finished['purchase'] - start_dates_tut_not_finished['registration']
+start_dates_tut_not_finished['reg_purch_diff_nf'].describe()
+
+#  то же самое - для тех, кто туториал не прошёл.
+start_dates_tut_not_finished = pd.pivot_table(total_events_tut_not_finish_df, index='user_id', columns='event_type', values='start_time', aggfunc=np.min)
+start_dates_tut_not_finished['reg_purch_diff_nf'] = start_dates_tut_not_finished['purchase'] - start_dates_tut_not_finished['registration']
+start_dates_tut_not_finished['reg_purch_diff_nf'].describe()
+
+# рассчитаем для обеих групп время между регистрацией и выбором уровня сложности.
+start_dates_tut_finished['reg_choice_diff_f'] = start_dates_tut_finished['level_choice'] - start_dates_tut_finished['registration']
+start_dates_tut_finished['reg_choice_diff_f'].describe()
+
+start_dates_tut_not_finished['reg_choice_diff_nf'] = start_dates_tut_not_finished['level_choice'] - start_dates_tut_not_finished['registration']
+start_dates_tut_not_finished['reg_choice_diff_nf'].describe()
+
+# объединим эти две таблицы
+import matplotlib.pyplot as plt
+bar_table = pd.concat([start_dates_tut_finished, start_dates_tut_not_finished])
+bar_table = bar_table[['reg_purch_diff_f', 'reg_purch_diff_nf', 'reg_choice_diff_f', 'reg_choice_diff_nf']]
+fig = plt.figure(figsize=(13, 4))
+main_axes = fig.add_axes([0, 0, 0.2, 1])
+main_axes.bar(x=bar_table[['reg_purch_diff_f', 'reg_purch_diff_nf']].mean().index, height=bar_table[['reg_purch_diff_f', 'reg_purch_diff_nf']].mean().values, color=['red', 'green'])
+
+fig = plt.figure(figsize=(13, 4))
+main_axes = fig.add_axes([0, 0, 0.2, 1])
+main_axes.bar(x=bar_table[['reg_choice_diff_f', 'reg_choice_diff_nf']].mean().index, height=bar_table[['reg_choice_diff_f', 'reg_choice_diff_nf']].mean().values, color=['red', 'green'])
+
+# составляем список пользователей, заверавших обучение
+tut_finish_users = total_events_df[total_events_df['event_type']=='tutorial_finish']['user_id'].unique()
+
+# выбираем из основного датасета информацию о пользователях, завершавших обучение, группируем по типу действия 
+# и смотрим количество пользователей на каждое действие 
+total_events_tut_finish = total_events_df[total_events_df['user_id'].isin(tut_finish_users)].groupby(['event_type'])['user_id'].count()
+round(total_events_tut_finish['purchase']*100/total_events_tut_finish['registration'], 2)
+
+# абсолютно то же самое, но для тех, кто обучение НЕ заканчивал. 
+total_events_not_tut_finish = total_events_df[~total_events_df['user_id'].isin(tut_finish_users)].groupby(['event_type'])['user_id'].count()
+reg_purch_not_finish_tut = round(total_events_not_tut_finish['purchase']*100/total_events_not_tut_finish['registration'], 2)
+reg_purch_not_finish_tut
+
+# для этого сначала создадим порядковую последовательность для event_type по user_id
+
+total_events_df = total_events_df.sort_values(['user_id', 'start_time'], ascending=True)
+total_events_df['row_num'] = total_events_df.groupby(['user_id'])['event_type'].cumcount()+1
+
+masc1 = total_events_df['user_id'].isin(tut_finish_users)
+masc2 = total_events_df['event_type'] == 'tutorial_finish'
+masc3 = total_events_df['row_num'] == 3
+
+# распределим пользователей на две группы.
+tut_fin_3_users = total_events_df[masc1 & masc2 & masc3]['user_id'].unique()
+tut_fin_3_more_users = total_events_df[masc1 & masc2 & ~masc3]['user_id'].unique()
+display(len(tut_fin_3_users))
+display(len(tut_fin_3_more_users))
+
+a = total_events_df[total_events_df['user_id'].isin(tut_fin_3_users)].groupby('event_type')['user_id'].count()['purchase']
+b = total_events_df[total_events_df['user_id'].isin(tut_fin_3_users)].groupby('event_type')['user_id'].count()['registration']
+reg_purch_straight_diff = a / b
+reg_purch_straight_diff
+
+c = total_events_df[total_events_df['user_id'].isin(tut_fin_3_more_users)].groupby('event_type')['user_id'].count()['purchase']
+d = total_events_df[total_events_df['user_id'].isin(tut_fin_3_more_users)].groupby('event_type')['user_id'].count()['registration']
+reg_purch_not_straight_diff = c / d
+reg_purch_not_straight_diff
+
+fig = plt.figure(figsize=(6, 4))
+main_axes = fig.add_axes([0, 0, 1, 1])
+main_axes.bar(x=['don\'t_finish_tut_users', 'tut_finish_straight_users', 'tot_finish_not_straight_users'], 
+              height=[reg_purch_not_finish_tut, a*100/b, c*100/d], width=0.5, color=['blue', 'red', 'green'])
+
+  pivot_row_nums = pd.pivot_table(total_events_df, values = 'user_id', index = 'event_type', columns = 'row_num', aggfunc = 'count')
+pivot_row_nums.columns = pivot_row_nums.columns.astype('string')
+
+import seaborn as sns
+heatmap = sns.heatmap(data=pivot_row_nums, cmap='Spectral_r')
+heatmap.set_title('Тепловая карта последовательности активности пользователей', fontsize=12)
+
+masc1=total_events_df[(total_events_df['event_type']=='tutorial_finish') | (total_events_df['event_type']=='tutorial_start')][['user_id', 'event_type', 'row_num']]
+pivot_nums = pd.pivot_table(masc1, values='row_num', index='user_id', aggfunc='count')
+
+# получаем список пользователей, обращавшихся за туториалом более одного раза.
+not_transparency_users = pivot_nums[pivot_nums['row_num'] > 2].index.tolist()
+
+# проверим получившиеся данные еще раз.
+not_transparency_events_df = total_events_df[total_events_df['user_id'].isin(not_transparency_users)]
+not_transparency_events_df[(not_transparency_events_df['event_type']=='tutorial_start') | (not_transparency_events_df['event_type']=='tutorial_finish')]['event_type'].value_counts()
+
+# Все верно, количество завершенных обучений немного меньше количества начатых, это значит, что где-то полторы тысячи пользователей 
+# не завершили свой последний начатый туториал
+
+# уровень взаимодействия с игрой далеко не самый прозрачный, целых 13.5% пользователей возвращались к обучению повторно.
+# в моей концепции приложения это - плохой результат. Чтобы доказать или опровергнуть мою позицию, нудно сделать еще 
+# один вспомогательный анализ - больше ли покупок совершают пользователи, которыя явно не разобрались в работе приложения.
+len(not_transparency_users) / len(total_events_df['user_id'].unique())
+
+not_transparency_events_df[not_transparency_events_df['event_type']=='purchase']['user_id'].nunique()/not_transparency_events_df['user_id'].nunique()
